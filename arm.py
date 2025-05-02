@@ -75,33 +75,45 @@ class RobotArmGUI:
         self.canvas.create_line(*self.to_screen(x2, y2), *self.to_screen(x3, y3), width=4, fill="green")
 
     def solve_ik(self,target_x, target_y):
+        '''
+        Given coordinate location of end effector D, we need to find the corresponding angles vector.
+        Here, we consider location of end effector only (its frame origin coordinates) and not orientation of frame.
+        which puts D in that location. This is inverse kinematics. Before solving for it, we eliminate some impossible solutions.
+        Robot manipulator reachability is restricted by total link length. Here this is L1+L2+L3 = 300 (circle inner region is workspace).
+        Also eliminate cases where configuration has singular Jacobian or includes collision of links by checking angles obtained at each step.
+        '''
         dx, dy = target_x, target_y
-        dist = math.hypot(dx, dy)
-        if dist > (self.L1 + self.L2 + self.L3):
+        dist = math.hypot(dx, dy) #Calculate query point distance
+        if dist > (self.L1 + self.L2 + self.L3): #Check reachability
+            print("Unreachable. Terminating")
             return None
+        
+        # We will convert the problem to simple 2 link manipulator by finding coordinates of point C and using that to determine theta1 and theta2 first
         tx = dx - self.L3 * (dx / dist)
         ty = dy - self.L3 * (dy / dist)
         d = math.hypot(tx, ty)
-
+        
+        # Using cosine rule
         cos_angle2 = (d ** 2 - self.L1 ** 2 - self.L2 ** 2) / (2 * self.L1 * self.L2)
-        if abs(cos_angle2) > 1:
+        if abs(cos_angle2) > 1: #Check if angle has been correctly obtained
             return None
-        angle2 = math.acos(cos_angle2)
+        angle2 = math.acos(cos_angle2)   #theta2 is cos inverse of the angle we obtained via cosine rule
         k1 = self.L1 + self.L2 * math.cos(angle2)
         k2 = self.L2 * math.sin(angle2)
         angle1 = math.atan2(ty, tx) - math.atan2(k2, k1)
+        #Solving for theta3 using theta2 and theta1
         angle3 = math.atan2(dy - (self.L1 * math.sin(angle1) + self.L2 * math.sin(angle1 + angle2)),
                             dx - (self.L1 * math.cos(angle1) + self.L2 * math.cos(angle1 + angle2))) - (angle1 + angle2)
         return angle1, angle2, angle3
 
-    # Redraw everything on click
+    # Redraw the arm on clicking
     def on_click(self,event):
         self.canvas.delete("all")
         self.draw_grid()
         self.draw_circle()
-        world_x = event.x - self.CENTER_X
+        world_x = event.x - self.CENTER_X #Converting to regular coordinates
         world_y = self.CENTER_Y - event.y
-        if math.hypot(world_x, world_y) <= self.RADIUS:
+        if math.hypot(world_x, world_y) <= self.RADIUS: #Check if desired point is within robot workspace
             angles = self.solve_ik(world_x, world_y)
-            if angles:
+            if angles: #Check if all angles in inverse kinematics are feasible or not
                 self.draw_arm(angles)
