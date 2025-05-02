@@ -1,7 +1,5 @@
 import os
 import math
-import numpy as np
-import time
 
 class RobotArmGUI:
     '''
@@ -23,12 +21,6 @@ class RobotArmGUI:
         self.L2 = L2
         self.L3 = L3
         self.canvas = canvas
-        self.angle1 = 0
-        self.angle2 = 0
-        self.angle3 = 0
-        self.previous_angles = np.zeros(3) #For determining least angles solution
-        self.current_angles = np.zeros(3)
-        self.current_position = np.zeros(2)
         
     def to_screen(self,x, y):
         '''
@@ -81,7 +73,6 @@ class RobotArmGUI:
         self.canvas.create_line(*self.to_screen(x0, y0), *self.to_screen(x1, y1), width=4, fill="green") #unpack the points and convert to screen coordinates before drawing segments
         self.canvas.create_line(*self.to_screen(x1, y1), *self.to_screen(x2, y2), width=4, fill="green") 
         self.canvas.create_line(*self.to_screen(x2, y2), *self.to_screen(x3, y3), width=4, fill="green")
-        self.current_position = np.array([x3,y3])
 
     def solve_ik(self,target_x, target_y):
         '''
@@ -91,7 +82,6 @@ class RobotArmGUI:
         Robot manipulator reachability is restricted by total link length. Here this is L1+L2+L3 = 300 (circle inner region is workspace).
         Also eliminate cases where configuration has singular Jacobian or includes collision of links by checking angles obtained at each step.
         '''
-        self.previous_angles = [self.angle1,self.angle2,self.angle3]
         dx, dy = target_x, target_y
         dist = math.hypot(dx, dy) #Calculate query point distance
         if dist > (self.L1 + self.L2 + self.L3): #Check reachability
@@ -107,38 +97,23 @@ class RobotArmGUI:
         cos_angle2 = (d ** 2 - self.L1 ** 2 - self.L2 ** 2) / (2 * self.L1 * self.L2)
         if abs(cos_angle2) > 1: #Check if angle has been correctly obtained
             return None
-        self.angle2 = math.acos(cos_angle2)   #theta2 is cos inverse of the angle we obtained via cosine rule
-        k1 = self.L1 + self.L2 * math.cos(self.angle2)
-        k2 = self.L2 * math.sin(self.angle2)
-        self.angle1 = math.atan2(ty, tx) - math.atan2(k2, k1)
+        angle2 = math.acos(cos_angle2)   #theta2 is cos inverse of the angle we obtained via cosine rule
+        k1 = self.L1 + self.L2 * math.cos(angle2)
+        k2 = self.L2 * math.sin(angle2)
+        angle1 = math.atan2(ty, tx) - math.atan2(k2, k1)
         #Solving for theta3 using theta2 and theta1
-        self.angle3 = math.atan2(dy - (self.L1 * math.sin(self.angle1) + self.L2 * math.sin(self.angle1 + self.angle2)),
-                            dx - (self.L1 * math.cos(self.angle1) + self.L2 * math.cos(self.angle1 + self.angle2))) - (self.angle1 + self.angle2)
-        return self.angle1, self.angle2, self.angle3
+        angle3 = math.atan2(dy - (self.L1 * math.sin(angle1) + self.L2 * math.sin(angle1 + angle2)),
+                            dx - (self.L1 * math.cos(angle1) + self.L2 * math.cos(angle1 + angle2))) - (angle1 + angle2)
+        return angle1, angle2, angle3
 
     # Redraw the arm on clicking
     def on_click(self,event):
         self.canvas.delete("all")
         self.draw_grid()
         self.draw_circle()
-        world_x = event.x - self.CENTER_X #Converting to regular coordinates to check with radius
+        world_x = event.x - self.CENTER_X #Converting to regular coordinates
         world_y = self.CENTER_Y - event.y
         if math.hypot(world_x, world_y) <= self.RADIUS: #Check if desired point is within robot workspace
-            #Calculate the 21 points
-            destination = np.array([world_x,world_y])
-            points = np.linspace(self.current_position,destination,num=21,endpoint=True)
-            #Print table
-            #print("\nTable:\n")
-            #print(f"{'Dot#':>4} | {'B pos':>18} | {'A-B ∡':>7} | {'ΔA-B ∡':>7} | {'C pos':>18} | {'B-C ∡':>7} | {'ΔB-C ∡':>7} | {'D pos':>18} | {'C-D ∡':>7} | {'ΔC-D ∡':>7} | {'Max Δ ∡':>7}")
-            for i in range(len(points)):  
-                soln = self.solve_ik(points[i][0],points[i][1])
-                if not soln:
-                    print("Point", i, "is unreachable")
-                    continue
-                self.canvas.delete("all")
-                self.draw_grid()
-                self.draw_circle()
-                self.draw_arm(soln)
-                self.canvas.update()
-                time.sleep(0.25)
-            self.current_position = destination
+            angles = self.solve_ik(world_x, world_y)
+            if angles: #Check if all angles in inverse kinematics are feasible or not
+                self.draw_arm(angles)
