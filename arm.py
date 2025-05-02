@@ -34,6 +34,7 @@ class RobotArmGUI:
 
     #Drawing circle and grid according to corresponding dimensions provided in constructor
     def draw_grid(self):
+        #We define robot's 'base frame' as having origin as point A (illustrated in report).
         for x in range(-self.WIDTH // 2 , self.WIDTH // 2 + 1, 20): #Draws gridlines across entire x axis
             sx1, sy1 = self.to_screen(x, -self.HEIGHT)
             sx2, sy2 = self.to_screen(x, self.HEIGHT)
@@ -45,22 +46,32 @@ class RobotArmGUI:
 
     #Drawing a circle
     def draw_circle(self):
+        '''
+        This will draw a semi-circular arc which cover the entire X-axis. 
+        '''
         x0, y0 = self.to_screen(-self.RADIUS, 0)
         x1, y1 = self.to_screen(self.RADIUS, 0)
         self.canvas.create_oval(x0, y0 - self.RADIUS, x1, y1 + self.RADIUS, outline="blue") #Blue circle
 
     def draw_arm(self,angles):
-        theta1, theta2, theta3 = angles
-        x0, y0 = 0, 0
-        x1 = x0 + self.L1 * math.cos(theta1)
-        y1 = y0 + self.L1 * math.sin(theta1)
-        x2 = x1 + self.L2 * math.cos(theta1 + theta2)
-        y2 = y1 + self.L2 * math.sin(theta1 + theta2)
-        x3 = x2 + self.L3 * math.cos(theta1 + theta2 + theta3)
+        '''
+        Let's define three angles. theta1 is the angle between segment AB and X-axis. theta2 is the angle between frame at point B and segment 
+        BC. theta3 is the angle between frame at point C and segment CD.
+        In this case, given these angles and link lengths, drawing the arm requires forward kinematics, which tells us the exact coordinates
+        of each frame with respect to the previous frame, allowing us to draw arm segments.
+        We can calculate forward kinematics using regular coordinates and conver to screen coordinates.
+        '''
+        theta1, theta2, theta3 = angles #Form a vector of angles
+        x0, y0 = 0, 0 #Base Frame location
+        x1 = x0 + self.L1 * math.cos(theta1) # x1,y1 = L1cos(theta1),L1sin(theta1)
+        y1 = y0 + self.L1 * math.sin(theta1) 
+        x2 = x1 + self.L2 * math.cos(theta1 + theta2) #Point C coordinates wrt base frame
+        y2 = y1 + self.L2 * math.sin(theta1 + theta2) 
+        x3 = x2 + self.L3 * math.cos(theta1 + theta2 + theta3) #Using forward kinematics to again find point D wrt base frame
         y3 = y2 + self.L3 * math.sin(theta1 + theta2 + theta3)
 
-        self.canvas.create_line(*self.to_screen(x0, y0), *self.to_screen(x1, y1), width=4, fill="green")
-        self.canvas.create_line(*self.to_screen(x1, y1), *self.to_screen(x2, y2), width=4, fill="green")
+        self.canvas.create_line(*self.to_screen(x0, y0), *self.to_screen(x1, y1), width=4, fill="green") #unpack the points and convert to screen coordinates before drawing segments
+        self.canvas.create_line(*self.to_screen(x1, y1), *self.to_screen(x2, y2), width=4, fill="green") 
         self.canvas.create_line(*self.to_screen(x2, y2), *self.to_screen(x3, y3), width=4, fill="green")
 
     def solve_ik(self,target_x, target_y):
