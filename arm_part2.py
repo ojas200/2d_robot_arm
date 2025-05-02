@@ -26,6 +26,7 @@ class RobotArmGUI:
         self.angle1 = 0
         self.angle2 = 0
         self.angle3 = 0
+        self.previous_angles = np.zeros(3) #For determining least angles solution
         self.current_angles = np.zeros(3)
         self.current_position = np.zeros(2)
         
@@ -90,6 +91,7 @@ class RobotArmGUI:
         Robot manipulator reachability is restricted by total link length. Here this is L1+L2+L3 = 300 (circle inner region is workspace).
         Also eliminate cases where configuration has singular Jacobian or includes collision of links by checking angles obtained at each step.
         '''
+        self.previous_angles = [self.angle1,self.angle2,self.angle3]
         dx, dy = target_x, target_y
         dist = math.hypot(dx, dy) #Calculate query point distance
         if dist > (self.L1 + self.L2 + self.L3): #Check reachability
@@ -113,73 +115,30 @@ class RobotArmGUI:
         self.angle3 = math.atan2(dy - (self.L1 * math.sin(self.angle1) + self.L2 * math.sin(self.angle1 + self.angle2)),
                             dx - (self.L1 * math.cos(self.angle1) + self.L2 * math.cos(self.angle1 + self.angle2))) - (self.angle1 + self.angle2)
         return self.angle1, self.angle2, self.angle3
-    
-    def forward_kinematics(self):
-        '''
-        Having used inverse kinematics solver, the joint angles are updated each time the solver finds
-        a unique solution. Use this function post solver_ik to find world coordinate locations of each point
-        Returns x,y tuple in order for B,C,D
-        '''
-        #Coordinates of base frame (origin -> A)
-        x0, y0 = 0, 0
-        #Coordinates of point B
-        x1 = x0 + self.L1 * math.cos(self.angle1)
-        y1 = y0 + self.L1 * math.sin(self.angle1)
-        #Coordinates of point C
-        x2 = x1 + self.L2 * math.cos(self.angle1 + self.angle2)
-        y2 = y1 + self.L2 * math.sin(self.angle1 + self.angle2)
-        #Coordinates of point D
-        x3 = x2 + self.L3 * math.cos(self.angle1 + self.angle2 + self.angle3)
-        y3 = y2 + self.L3 * math.sin(self.angle1 + self.angle2 + self.angle3)
-        return x1,y1,x2,y2,x3,y3
 
-    def on_click(self, event):
-        '''
-        The main action loop. Defines the actions post receiving a new click.
-        '''
+    # Redraw the arm on clicking
+    def on_click(self,event):
         self.canvas.delete("all")
         self.draw_grid()
         self.draw_circle()
-        world_x = event.x - self.CENTER_X
+        world_x = event.x - self.CENTER_X #Converting to regular coordinates to check with radius
         world_y = self.CENTER_Y - event.y
-
-        if math.hypot(world_x, world_y) <= self.RADIUS:
-            destination = np.array([world_x, world_y])
-            points = np.linspace(self.current_position, destination, num=21, endpoint=True)
-
-            print("\nTable:\n")
-            print(f"{'Dot#':>4} | {'B pos':>18} | {'A-B ∡':>7} | {'ΔA-B ∡':>7} | "
-                f"{'C pos':>18} | {'B-C ∡':>7} | {'ΔB-C ∡':>7} | "
-                f"{'D pos':>18} | {'C-D ∡':>7} | {'ΔC-D ∡':>7} | {'Max Δ ∡':>7}")
-
-            prev_angles = None
-
-            for i, pt in enumerate(points):
-                soln = self.solve_ik(pt[0], pt[1])
+        if math.hypot(world_x, world_y) <= self.RADIUS: #Check if desired point is within robot workspace
+            #Calculate the 21 points
+            destination = np.array([world_x,world_y])
+            points = np.linspace(self.current_position,destination,num=21,endpoint=True)
+            #Print table
+            #print("\nTable:\n")
+            #print(f"{'Dot#':>4} | {'B pos':>18} | {'A-B ∡':>7} | {'ΔA-B ∡':>7} | {'C pos':>18} | {'B-C ∡':>7} | {'ΔB-C ∡':>7} | {'D pos':>18} | {'C-D ∡':>7} | {'ΔC-D ∡':>7} | {'Max Δ ∡':>7}")
+            for i in range(len(points)):  
+                soln = self.solve_ik(points[i][0],points[i][1])
                 if not soln:
-                    print(f"Point {i:>3} is unreachable")
+                    print("Point", i, "is unreachable")
                     continue
-
-                #Converting to degrees and storing with correct format as required        
-                angle1, angle2, angle3 = np.degrees(soln)
-                theta = np.array([90-angle1, -angle2, -angle3])
-
-                # Forward kinematics for points B, C, D
-                x1,y1,x2,y2,x3,y3 = self.forward_kinematics()
-
-                delta_angles = np.abs(theta - prev_angles) if prev_angles is not None else np.zeros(3)
-                max_delta = np.max(delta_angles)
-                prev_angles = theta
-
-                print(f"{i+1:>4} | ({x1:6.1f}, {y1:6.1f}) | {theta[0]:7.2f} | {delta_angles[0]:7.2f} | "
-                    f"({x2:6.1f}, {y2:6.1f}) | {theta[1]:7.2f} | {delta_angles[1]:7.2f} | "
-                    f"({x3:6.1f}, {y3:6.1f}) | {theta[2]:7.2f} | {delta_angles[2]:7.2f} | {max_delta:7.2f}")
-
                 self.canvas.delete("all")
                 self.draw_grid()
                 self.draw_circle()
                 self.draw_arm(soln)
                 self.canvas.update()
                 time.sleep(0.25)
-
             self.current_position = destination
