@@ -152,6 +152,126 @@ class RobotArmGUI:
             return -self.WIDTH // 2 <= x <= self.WIDTH // 2 and 0 <= y <= self.HEIGHT
         return all(in_bounds(*pt) for pt in [(x1, y1), (x2, y2), (x3, y3)])
 
+    def on_click_dp(self, event):
+        '''
+        The main action loop. Defines the actions post receiving a new click.
+        Modified this to include dynamic programming solution minimum max delta(angles) over all paths.
+        '''
+        self.canvas.delete("all")
+        self.draw_grid()
+        self.draw_circle()
+
+        #Converting click coordinates to base frame coordinates
+        world_x = event.x - self.CENTER_X
+        world_y = self.CENTER_Y - event.y
+
+        #Checking reachability before calculating inverse kinematics
+        if math.hypot(world_x, world_y) <= self.RADIUS:
+            
+            destination = np.array([world_x, world_y])
+            points = np.linspace(self.current_position, destination, num=21, endpoint=True)
+
+            print("\nTable:\n")
+            print(f"{'Dot#':>4} | {'B pos':>18} | {'A-B ∡':>7} | {'ΔA-B ∡':>7} | "
+                f"{'C pos':>18} | {'B-C ∡':>7} | {'ΔB-C ∡':>7} | "
+                f"{'D pos':>18} | {'C-D ∡':>7} | {'ΔC-D ∡':>7} | {'Max Δ ∡':>7}")
+
+            #At each point, we will store the best angles (which we use to draw the arm) for calculation of delta (angle)
+            prev_angles = None
+
+            #Store all solutions for each of the 21 points
+            all_soln = []
+            #Save corresponding points in case a point is at singularity
+            valid_pts = [] 
+            for i, pt in enumerate(points):
+                soln = self.solve_ik(pt[0], pt[1])
+                if not soln:
+                    print(f"Point {i:>3} lies at singular configuration")
+                    return
+
+                formatted = []
+                for sol in soln:
+                    angle1, angle2, angle3 = np.degrees(sol)
+                    theta = np.array([90 - angle1, -angle2, -angle3])
+                    formatted.append(theta)
+                
+                valid_pts.append(pt)
+                all_soln.append(formatted)
+
+            #Store all solutions    
+            n = len(all_soln)
+
+            #Dynamic Programming to minimize max delta over all paths
+            dp = [{} for _ in range(n)]  # dp[i][j] = (max_delta_so_far, prev_choice_index)
+
+            for j, theta in enumerate(all_soln[0]):
+                dp[0][j] = (0, -1)  # No delta for the first one
+
+            for i in range(1, n):
+                for j, curr_theta in enumerate(all_soln[i]):
+                    min_entry = (float('inf'), None)
+                    for k, prev_theta in enumerate(all_soln[i - 1]):
+                        delta = np.abs(curr_theta - prev_theta)
+                        max_delta = max(np.max(delta), dp[i - 1][k][0])
+                        if max_delta < min_entry[0]:
+                            min_entry = (max_delta, k)
+                    dp[i][j] = min_entry
+
+            # Step 3: Backtrack to find optimal path
+            min_last_delta = float('inf')
+            last_index = None
+            for j, (max_delta, _) in dp[-1].items():
+                if max_delta < min_last_delta:
+                    min_last_delta = max_delta
+                    last_index = j
+
+            best_path = [last_index]
+            for i in reversed(range(1, n)):
+                last_index = dp[i][last_index][1]
+                best_path.append(last_index)
+            best_path.reverse()
+
+
+            for i, pt in enumerate(valid_pts): 
+                #We find the theta which minimizes max delta over entire path
+                #Converting to degrees and storing with correct format as required
+                theta = all_soln[i][best_path[i]]        
+                angle1, angle2, angle3 = np.array([90-theta[0], -theta[1], -theta[2]])
+
+                # Forward kinematics for points B, C, D
+                x1,y1,x2,y2,x3,y3 = self.forward_kinematics(np.radians([angle1,angle2,angle3]))
+
+                if not self.within_grid(x1,y1,x2,y2,x3,y3):
+                    print("In this solution, one or more joints lie outside grid. Skipping")
+                    continue
+
+                #For the best solution in this case, find delta and arrange angles in the table to satisfy given pre-condition
+                delta_angles = np.abs(theta - prev_angles) if prev_angles is not None else np.zeros(3)
+                max_delta = np.max(delta_angles)
+
+                #Saving for next step
+                prev_angles = theta
+
+                #Print table
+                print(f"{i+1:>4} | ({x1:6.1f}, {y1:6.1f}) | {theta[0]:7.2f} | {delta_angles[0]:7.2f} | "
+                    f"({x2:6.1f}, {y2:6.1f}) | {theta[1]:7.2f} | {delta_angles[1]:7.2f} | "
+                    f"({x3:6.1f}, {y3:6.1f}) | {theta[2]:7.2f} | {delta_angles[2]:7.2f} | {max_delta:7.2f}")
+                
+                #Clear canvas to display arm position afresh
+                self.canvas.delete("all")
+                self.draw_grid()
+                self.draw_circle()
+                self.draw_arm((angle1,angle2,angle3))
+                
+                #By default, tkinter will not show the figure at each intermittent step. We want to see all intermediate arm steps.
+                #Hence, force canvas update.
+                self.canvas.update()
+                time.sleep(0.25)
+        
+        #Check if arm has actually reached the point
+        print("Distance between destination and final end effector position:", math.sqrt((x3-world_x)**2 + (y3-world_y)**2))
+        self.current_position = destination
+
     def on_click(self, event):
         '''
         The main action loop. Defines the actions post receiving a new click.
@@ -165,6 +285,7 @@ class RobotArmGUI:
         world_y = self.CENTER_Y - event.y
 
         if math.hypot(world_x, world_y) <= self.RADIUS:
+            print("Not reachable. Re-input")
             #Checking reachability before calculating inverse kinematics
             destination = np.array([world_x, world_y])
             points = np.linspace(self.current_position, destination, num=21, endpoint=True)
@@ -177,10 +298,11 @@ class RobotArmGUI:
             #At each point, we will store the best angles (which we use to draw the arm) for calculation of delta (angle)
             prev_angles = None
 
+            #Store all solutions for each of the 21 points
             for i, pt in enumerate(points):
                 soln = self.solve_ik(pt[0], pt[1])
                 if not soln:
-                    print(f"Point {i:>3} is unreachable")
+                    print(f"Point {i:>3} lies at singular configuration")
                     continue
                 
                 best_soln = []

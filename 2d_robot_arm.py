@@ -28,7 +28,7 @@ Instantiating object of class RobotArmGUI, which has functions
 for manipulating the robot arm within the GUI 
 '''
 gui = RobotArmGUI(canvas,CENTER_X,CENTER_Y,WIDTH,HEIGHT,RADIUS,L1,L2,L3)
-# Bind mouse event
+# Bind mouse event-dynamic programming approach
 canvas.bind("<Button-1>", gui.on_click)
 # Initial draw
 gui.draw_grid()
