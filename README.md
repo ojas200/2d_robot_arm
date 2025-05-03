@@ -3,8 +3,10 @@ Simple implementation of Python-GUI based 2D robot arm for analysis of robot arm
 
 ### Installation
 The required dependencies can be installed, if not previously present in the system by using<br>
-`pip install tkinter`
-`pip install python-math`
+```
+pip install tkinter
+pip install python-math
+```
 
 ### Implementation<br>
 This repository includes a Python script called `arm.py` and a test script called `2d_robot_arm.py`.<br>
