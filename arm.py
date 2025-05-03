@@ -89,7 +89,10 @@ class RobotArmGUI:
         which puts D in that location. This is inverse kinematics. Before solving for it, we eliminate some impossible solutions.
         Robot manipulator reachability is restricted by total link length. Here this is L1+L2+L3 = 300 (circle inner region is workspace).
         Also eliminate cases where configuration has singular Jacobian or includes collision of links by checking angles obtained at each step.
+
+        Updated: now solve_ik returns all solutions, so that we can minimize max angle change at each time step.
         '''
+        solutions = [] #Let us update solve_ik to return all possible solutions
         dx, dy = target_x, target_y
         dist = math.hypot(dx, dy) #Calculate query point distance
         if dist > (self.L1 + self.L2 + self.L3): #Check reachability
@@ -105,33 +108,49 @@ class RobotArmGUI:
         cos_angle2 = (d ** 2 - self.L1 ** 2 - self.L2 ** 2) / (2 * self.L1 * self.L2)
         if abs(cos_angle2) > 1: #Check if angle has been correctly obtained
             return None
-        self.angle2 = math.acos(cos_angle2)   #theta2 is cos inverse of the angle we obtained via cosine rule
-        k1 = self.L1 + self.L2 * math.cos(self.angle2)
-        k2 = self.L2 * math.sin(self.angle2)
-        self.angle1 = math.atan2(ty, tx) - math.atan2(k2, k1)
-        #Solving for theta3 using theta2 and theta1
-        self.angle3 = math.atan2(dy - (self.L1 * math.sin(self.angle1) + self.L2 * math.sin(self.angle1 + self.angle2)),
-                            dx - (self.L1 * math.cos(self.angle1) + self.L2 * math.cos(self.angle1 + self.angle2))) - (self.angle1 + self.angle2)
-        return self.angle1, self.angle2, self.angle3
+        
+        #Now, we have multiple solutions for angle2. Which is +- angle2
+        ang2_options = [math.acos(cos_angle2),-math.acos(cos_angle2)]  
+
+        for angle2 in ang2_options: 
+            k1 = self.L1 + self.L2 * math.cos(angle2)
+            k2 = self.L2 * math.sin(angle2)
+            angle1 = math.atan2(ty, tx) - math.atan2(k2, k1)
+            #Solving for theta3 using theta2 and theta1
+            angle3 = math.atan2(dy - (self.L1 * math.sin(angle1) + self.L2 * math.sin(angle1 + angle2)),
+                                dx - (self.L1 * math.cos(angle1) + self.L2 * math.cos(angle1 + angle2))) - (angle1 + angle2)
+            solutions.append((angle1,angle2,angle3))
+
+        return solutions
     
-    def forward_kinematics(self):
+    def forward_kinematics(self,soln):
         '''
-        Having used inverse kinematics solver, the joint angles are updated each time the solver finds
-        a unique solution. Use this function post solver_ik to find world coordinate locations of each point
+        Updated this function to take in a set of joint angle solutions in radians.
+        Use this function to find world coordinate locations of each point
         Returns x,y tuple in order for B,C,D
         '''
+        angle1, angle2, angle3 = soln
         #Coordinates of base frame (origin -> A)
         x0, y0 = 0, 0
         #Coordinates of point B
-        x1 = x0 + self.L1 * math.cos(self.angle1)
-        y1 = y0 + self.L1 * math.sin(self.angle1)
+        x1 = x0 + self.L1 * math.cos(angle1)
+        y1 = y0 + self.L1 * math.sin(angle1)
         #Coordinates of point C
-        x2 = x1 + self.L2 * math.cos(self.angle1 + self.angle2)
-        y2 = y1 + self.L2 * math.sin(self.angle1 + self.angle2)
+        x2 = x1 + self.L2 * math.cos(angle1 + angle2)
+        y2 = y1 + self.L2 * math.sin(angle1 + angle2)
         #Coordinates of point D
-        x3 = x2 + self.L3 * math.cos(self.angle1 + self.angle2 + self.angle3)
-        y3 = y2 + self.L3 * math.sin(self.angle1 + self.angle2 + self.angle3)
+        x3 = x2 + self.L3 * math.cos(angle1 + angle2 + angle3)
+        y3 = y2 + self.L3 * math.sin(angle1 + angle2 + angle3)
         return x1,y1,x2,y2,x3,y3
+    
+    def within_grid(self, x1, y1, x2, y2, x3, y3):
+        '''
+        Checks if all the points B, C and D lie within our figure. We use the output
+        of forward kinematics to check if the point's coordinates lie in a specific range (grid dimensions).
+        '''
+        def in_bounds(x, y):
+            return -self.WIDTH // 2 <= x <= self.WIDTH // 2 and 0 <= y <= self.HEIGHT
+        return all(in_bounds(*pt) for pt in [(x1, y1), (x2, y2), (x3, y3)])
 
     def on_click(self, event):
         '''
@@ -140,10 +159,13 @@ class RobotArmGUI:
         self.canvas.delete("all")
         self.draw_grid()
         self.draw_circle()
+
+        #Converting click coordinates to base frame coordinates
         world_x = event.x - self.CENTER_X
         world_y = self.CENTER_Y - event.y
 
         if math.hypot(world_x, world_y) <= self.RADIUS:
+            #Checking reachability before calculating inverse kinematics
             destination = np.array([world_x, world_y])
             points = np.linspace(self.current_position, destination, num=21, endpoint=True)
 
@@ -152,6 +174,7 @@ class RobotArmGUI:
                 f"{'C pos':>18} | {'B-C ∡':>7} | {'ΔB-C ∡':>7} | "
                 f"{'D pos':>18} | {'C-D ∡':>7} | {'ΔC-D ∡':>7} | {'Max Δ ∡':>7}")
 
+            #At each point, we will store the best angles (which we use to draw the arm) for calculation of delta (angle)
             prev_angles = None
 
             for i, pt in enumerate(points):
@@ -159,27 +182,53 @@ class RobotArmGUI:
                 if not soln:
                     print(f"Point {i:>3} is unreachable")
                     continue
+                
+                best_soln = []
+                min_max_delta = float('inf')
 
-                #Converting to degrees and storing with correct format as required        
-                angle1, angle2, angle3 = np.degrees(soln)
-                theta = np.array([90-angle1, -angle2, -angle3])
+                for sol in soln: 
+                    #We will calculate the best solution by selecting the solution which minimizes max delta at each time step
+                    #Converting to degrees and storing with correct format as required        
+                    angle1, angle2, angle3 = np.degrees(sol)
+                    theta = np.array([90-angle1, -angle2, -angle3])
+
+                    delta_angles = np.abs(theta - prev_angles) if prev_angles is not None else np.zeros(3)
+                    max_delta = np.max(delta_angles)
+                    if max_delta < min_max_delta:
+                        best_soln = sol
+                        min_max_delta = max_delta
 
                 # Forward kinematics for points B, C, D
-                x1,y1,x2,y2,x3,y3 = self.forward_kinematics()
+                x1,y1,x2,y2,x3,y3 = self.forward_kinematics(best_soln)
+                if not self.within_grid(x1,y1,x2,y2,x3,y3):
+                    print("In this solution, one or more joints lie outside grid. Skipping")
+                    continue
 
+                #For the best solution in this case, find delta and arrange angles in the table to satisfy given pre-conditions
+                angle1, angle2, angle3 = np.degrees(best_soln)
+                theta = np.array([90-angle1, -angle2, -angle3])
                 delta_angles = np.abs(theta - prev_angles) if prev_angles is not None else np.zeros(3)
                 max_delta = np.max(delta_angles)
+
+                #Saving for next step
                 prev_angles = theta
 
+                #Print table
                 print(f"{i+1:>4} | ({x1:6.1f}, {y1:6.1f}) | {theta[0]:7.2f} | {delta_angles[0]:7.2f} | "
                     f"({x2:6.1f}, {y2:6.1f}) | {theta[1]:7.2f} | {delta_angles[1]:7.2f} | "
                     f"({x3:6.1f}, {y3:6.1f}) | {theta[2]:7.2f} | {delta_angles[2]:7.2f} | {max_delta:7.2f}")
-
+                
+                #Clear canvas to display arm position afresh
                 self.canvas.delete("all")
                 self.draw_grid()
                 self.draw_circle()
-                self.draw_arm(soln)
+                self.draw_arm(best_soln)
+                
+                #By default, tkinter will not show the figure at each intermittent step. We want to see all intermediate arm steps.
+                #Hence, force canvas update.
                 self.canvas.update()
                 time.sleep(0.25)
-
+            
+            #Check if arm has actually reached the point
+            print("Distance between destination and final end effector position:", math.sqrt((x3-world_x)**2 + (y3-world_y)**2))
             self.current_position = destination
