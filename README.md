@@ -7,7 +7,6 @@ The required dependencies can be installed, if not previously present in the sys
 pip install tkinter
 pip install python-math
 ````
-
 ### Implementation<br>
 This repository includes a Python script called `arm.py` and a test script called `2d_robot_arm.py`.<br>
 `arm.py` contains a class called `RobotArmGUI` which includes functionality for an interactive GUI based on `tkinter` to simulate and analyze a 2D Robot Arm with three links. The `RobotArmGUI` script contains following functions:
