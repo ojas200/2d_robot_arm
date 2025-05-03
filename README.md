@@ -3,8 +3,10 @@ Simple implementation of Python-GUI based 2D robot arm for analysis of robot arm
 
 ### Installation
 The required dependencies can be installed, if not previously present in the system by using<br>
-`pip install tkinter`
-`pip install python-math`
+````
+pip install tkinter
+pip install python-math
+````
 
 ### Implementation<br>
 This repository includes a Python script called `arm.py` and a test script called `2d_robot_arm.py`.<br>
@@ -22,8 +24,9 @@ This repository includes a Python script called `arm.py` and a test script calle
 
 
 ### Usage
-To open the GUI, install requirements first. Next, clone repository to local machine (preferably Linux-based OS but Windows will also work):<br>
-`git clone https://github.com/ojas200/2d_robot_arm.git`<br>
+To open the GUI, install requirements first. <br>
+Next, clone repository to local machine (preferably Linux-based OS but Windows will also work):<br>
+```git clone https://github.com/ojas200/2d_robot_arm.git```<br>
 
 To run on terminal, run `python 2d_robot_arm.py` or use a code editor such as VSCode or such to run the script `2d_robot_arm.py`.<br>
 Currently, we are using `on_click` for implementation of trajectory generation. `on_click_dp` is still a work in progress.
