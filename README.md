@@ -1,5 +1,5 @@
 # 2D-Robot-Arm Manipulation & Analysis
-Simple implementation of Python-GUI based 2D robot arm for analysis of robot arm workspace and reachability
+Simple implementation of Python-GUI based 2D robot arm for analysis of robot arm workspace, reachability and optimum manipulation strategies.
 
 ### Installation
 The required dependencies can be installed, if not previously present in the system by using<br>
@@ -28,4 +28,12 @@ Next, clone repository to local machine (preferably Linux-based OS but Windows w
 ```git clone https://github.com/ojas200/2d_robot_arm.git```<br>
 
 To run on terminal, run `python 2d_robot_arm.py` or use a code editor such as VSCode or such to run the script `2d_robot_arm.py`.<br>
-Currently, we are using `on_click` for implementation of trajectory generation. `on_click_dp` is still a work in progress.
+Currently, we are using `on_click` for implementation of trajectory generation. `on_click_dp` is still a work in progress.<br>
+The table required in the problem statement can be seen on terminal window or code editor output screen after each mouse click.
+
+
+### Logs
+I have also added some previous files to show how the code evolved over time, especially in the class definition.
+1. `arm_initial.py` is just the GUI with move functionality.
+2. `arm_part2.py` is the GUI with 21 points along a straight line functionality.
+3. `arm_w_table.py` is the GUI with a table being printed according to requirements on the terminal/code editor output window, depending where you run them from.
